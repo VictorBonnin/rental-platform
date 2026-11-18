@@ -5,7 +5,7 @@ from app.pricing import PricingError, compute_quote
 
 def test_standard_two_days_costs_120_eur():
     quote = compute_quote("standard", 2)
-    assert quote.total == 120
+    assert quote.total == 999  # TP01 step 7: red PR must be blocked
     assert quote.currency == "EUR"
 
 
