@@ -1,0 +1,11 @@
+# Configuration Gitleaks : règles par défaut + exclusions bornées.
+title = "rental-platform gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Fichiers générés ou binaires sans secret possible"
+paths = [
+    '''apps/car-rental-service/gradle/wrapper/gradle-wrapper\.jar''',
+]

@@ -75,6 +75,30 @@ def test() -> None:
     test_python()
 
 
+def lint_java() -> None:
+    run([gradlew(), "checkstyleMain", "checkstyleTest"], cwd=JAVA_SERVICE)
+
+
+def lint_python() -> None:
+    run([sys.executable, "-m", "ruff", "check", "app", "tests"], cwd=PYTHON_SERVICE)
+    run([sys.executable, "-m", "ruff", "format", "--check", "app", "tests"], cwd=PYTHON_SERVICE)
+
+
+def lint() -> None:
+    lint_java()
+    lint_python()
+
+
+def verify() -> None:
+    """Local quality gates: tests then linters. Stops at the first failure.
+
+    Docker images, Gitleaks, report publishing and branch protection stay
+    the responsibility of the GitHub Actions workflows.
+    """
+    test()
+    lint()
+
+
 def compose_up() -> None:
     run(["docker", "compose", "up", "--build", "--detach"])
 
@@ -125,6 +149,10 @@ COMMANDS = {
     "test-java": test_java,
     "test-python": test_python,
     "test": test,
+    "lint-java": lint_java,
+    "lint-python": lint_python,
+    "lint": lint,
+    "verify": verify,
     "compose-up": compose_up,
     "compose-down": compose_down,
     "smoke": smoke,

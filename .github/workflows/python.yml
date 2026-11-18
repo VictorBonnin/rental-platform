@@ -1,22 +1,128 @@
 name: Python service
 
+# Pas de filtre `paths` : les contrôles requis par la protection de `main`
+# doivent exister sur toutes les PR, sinon la PR reste bloquée en "Expected".
 on:
   push:
+    branches: [main]
   pull_request:
+  workflow_dispatch:
+
+# Permissions minimales : lecture du code uniquement.
+permissions:
+  contents: read
+
+# Une nouvelle exécution sur la même branche / PR annule la précédente.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: apps/pricing-service
 
 jobs:
-  build:
+  tests:
+    name: Python tests
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+
+      # Cache pip indexé sur le fichier de dépendances.
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: apps/pricing-service/requirements-dev.txt
+
       - name: Install dependencies
-        working-directory: apps/pricing-service
-        run: pip install -r requirements-dev.txt
-      - name: Tests
-        working-directory: apps/pricing-service
-        run: python -m pytest
-      - name: Docker image
-        run: docker build -t pricing-service apps/pricing-service
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: python -m pytest --junitxml=build/test-results/pytest.xml
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-test-reports
+          path: apps/pricing-service/build/test-results/
+          retention-days: 7
+          if-no-files-found: warn
+
+  quality:
+    name: Python quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: apps/pricing-service/requirements-dev.txt
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements-dev.txt
+
+      # Le rapport JUnit est produit même en cas d'échec, puis le format est vérifié.
+      - name: Ruff lint
+        run: |
+          mkdir -p build/reports
+          python -m ruff check app tests --output-format=junit --output-file=build/reports/ruff.xml \
+            || { python -m ruff check app tests --output-format=github; exit 1; }
+
+      - name: Ruff format
+        run: python -m ruff format --check app tests
+
+      - name: Upload Ruff report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-ruff-report
+          path: apps/pricing-service/build/reports/
+          retention-days: 7
+          if-no-files-found: warn
+
+  image:
+    name: Python Docker image
+    needs: [tests, quality]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Seul ce job a besoin d'écrire dans le registre, et seulement hors PR.
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # Un nom d'image Docker doit être en minuscules, contrairement au
+      # propriétaire GitHub (ex. VictorBonnin).
+      - name: Compute image name
+        run: echo "IMAGE_NAME=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/pricing-service" >> "$GITHUB_ENV"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build (and push from main only)
+        uses: docker/build-push-action@v6
+        env:
+          # Rapport de build publié automatiquement : même rétention que les autres.
+          DOCKER_BUILD_RECORD_RETENTION_DAYS: 7
+        with:
+          context: apps/pricing-service
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.IMAGE_NAME }}:latest
+          cache-from: type=gha,scope=pricing-service
+          cache-to: type=gha,mode=max,scope=pricing-service

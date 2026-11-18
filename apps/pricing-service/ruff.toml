@@ -1,0 +1,14 @@
+# Ruff : linter + formateur du service pricing.
+target-version = "py312"
+line-length = 100
+
+[lint]
+# E : erreurs pycodestyle, F : Pyflakes (imports/variables inutilisés,
+# noms non définis), I : tri des imports (isort).
+select = ["E", "F", "I"]
+
+[lint.isort]
+known-first-party = ["app"]
+
+[format]
+quote-style = "double"

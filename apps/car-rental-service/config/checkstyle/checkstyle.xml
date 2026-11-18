@@ -1,0 +1,57 @@
+<?xml version="1.0"?>
+<!DOCTYPE module PUBLIC
+        "-//Checkstyle//DTD Checkstyle Configuration 1.3//EN"
+        "https://checkstyle.org/dtds/configuration_1_3.dtd">
+
+<!--
+  Configuration minimale du service car-rental.
+  Chaque règle couvre un risque précis ; aucune n'est désactivée globalement.
+  Une exception locale passe par @SuppressWarnings("checkstyle:<Règle>")
+  accompagné d'un commentaire qui justifie l'exception.
+-->
+<module name="Checker">
+    <property name="charset" value="UTF-8"/>
+    <property name="severity" value="error"/>
+    <property name="fileExtensions" value="java"/>
+
+    <!-- Lisibilité dans les revues de code et les diffs. -->
+    <module name="LineLength">
+        <property name="max" value="120"/>
+        <property name="ignorePattern" value="^(package|import) .*"/>
+    </module>
+
+    <module name="FileTabCharacter"/>
+    <module name="NewlineAtEndOfFile">
+        <!-- Accepte LF (CI Linux) comme CRLF (poste Windows). -->
+        <property name="lineSeparator" value="lf_cr_crlf"/>
+    </module>
+
+    <!-- Permet les exceptions locales justifiées via @SuppressWarnings. -->
+    <module name="SuppressWarningsFilter"/>
+
+    <module name="TreeWalker">
+        <module name="SuppressWarningsHolder"/>
+
+        <!-- Imports : code mort et dépendances cachées. -->
+        <module name="UnusedImports"/>
+        <module name="RedundantImport"/>
+        <module name="AvoidStarImport"/>
+
+        <!-- Accolades obligatoires : évite le piège "goto fail". -->
+        <module name="NeedBraces"/>
+        <module name="LeftCurly"/>
+        <module name="RightCurly"/>
+
+        <!-- Instructions et blocs vides : souvent une erreur ou une exception avalée. -->
+        <module name="EmptyStatement"/>
+        <module name="EmptyBlock">
+            <property name="option" value="TEXT"/>
+        </module>
+        <module name="EmptyCatchBlock"/>
+
+        <!-- Quelques défauts classiques. -->
+        <module name="EqualsHashCode"/>
+        <module name="OneStatementPerLine"/>
+        <module name="MissingSwitchDefault"/>
+    </module>
+</module>

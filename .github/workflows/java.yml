@@ -1,20 +1,119 @@
 name: Java service
 
+# Pas de filtre `paths` : les contrôles requis par la protection de `main`
+# doivent exister sur toutes les PR, sinon la PR reste bloquée en "Expected".
 on:
   push:
+    branches: [main]
   pull_request:
+  workflow_dispatch:
+
+# Permissions minimales : lecture du code uniquement.
+permissions:
+  contents: read
+
+# Une nouvelle exécution sur la même branche / PR annule la précédente.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: apps/car-rental-service
 
 jobs:
-  build:
+  tests:
+    name: Java tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "21"
-      - name: Tests
-        working-directory: apps/car-rental-service
-        run: ./gradlew clean test
-      - name: Docker image
-        run: docker build -t car-rental-service apps/car-rental-service
+
+      # Cache des dépendances et du wrapper Gradle (~/.gradle).
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Run tests
+        run: ./gradlew test --no-daemon
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: java-test-reports
+          path: |
+            apps/car-rental-service/build/test-results/test/
+            apps/car-rental-service/build/reports/tests/test/
+          retention-days: 7
+          if-no-files-found: warn
+
+  quality:
+    name: Java quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Checkstyle
+        run: ./gradlew checkstyleMain checkstyleTest --no-daemon
+
+      - name: Upload Checkstyle reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: java-checkstyle-reports
+          path: apps/car-rental-service/build/reports/checkstyle/
+          retention-days: 7
+          if-no-files-found: warn
+
+  image:
+    name: Java Docker image
+    needs: [tests, quality]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Seul ce job a besoin d'écrire dans le registre, et seulement hors PR.
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # Un nom d'image Docker doit être en minuscules, contrairement au
+      # propriétaire GitHub (ex. VictorBonnin).
+      - name: Compute image name
+        run: echo "IMAGE_NAME=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/car-rental-service" >> "$GITHUB_ENV"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build (and push from main only)
+        uses: docker/build-push-action@v6
+        env:
+          # Rapport de build publié automatiquement : même rétention que les autres.
+          DOCKER_BUILD_RECORD_RETENTION_DAYS: 7
+        with:
+          context: apps/car-rental-service
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.IMAGE_NAME }}:latest
+          cache-from: type=gha,scope=car-rental-service
+          cache-to: type=gha,mode=max,scope=car-rental-service

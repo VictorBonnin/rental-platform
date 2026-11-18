@@ -19,6 +19,8 @@ Règle métier de référence : une voiture `standard` louée 2 jours coûte **1
 ```bash
 python scripts/course.py prerequisites
 python scripts/course.py test          # tests Java puis Python
+python scripts/course.py lint          # Checkstyle puis Ruff (lint-java / lint-python)
+python scripts/course.py verify        # tests puis qualité, s'arrête au premier échec (code 1)
 python scripts/course.py compose-up    # construit et démarre les services
 python scripts/course.py smoke         # vérifie /health, /cars et le devis à 120 EUR
 python scripts/course.py compose-down
@@ -34,3 +36,15 @@ python -m venv .venv
 .venv/Scripts/python -m pip install -r apps/pricing-service/requirements-dev.txt   # Windows
 # .venv/bin/python -m pip install -r apps/pricing-service/requirements-dev.txt     # Linux / macOS
 ```
+
+## Intégration continue
+
+| Workflow | Jobs (contrôles requis) |
+|---|---|
+| `Java service` | `Java tests`, `Java quality` → `Java Docker image` |
+| `Python service` | `Python tests`, `Python quality` → `Python Docker image` |
+| `Secret detection` | `Secret detection` (Gitleaks sur tout l'historique) |
+
+`verify` reproduit localement les portes **tests et qualité** uniquement :
+la construction des images, Gitleaks, la publication des rapports et la
+protection de branche restent assurées par GitHub Actions.
